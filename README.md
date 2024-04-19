@@ -16,3 +16,17 @@ go run main.go file1.txt
 ```
 go run main.go file1.txt file2.txt file3.txt
 ```
+
+## To calculate bit-level informational entropy in addition to byte-level entropy
+
+### Single File with --bit flag:
+
+```
+go run main.go --bit file1.txt
+```
+
+### Multiple Files with --bit flag
+
+```
+go run main.go --bit file1.txt file2.txt file3.txt
+```
