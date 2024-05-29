@@ -13,13 +13,22 @@ gcc -o main main.c -lm
 ```
 #### run
 ```
-./main file1 ...
+./main file1 
 
 ```
 
 ### To run multiple files
 
 ```
-./ file1 file2 ...
+./ main file1 file2 ...
 
 ```
+
+### To calculate bit informational entropy of a single file
+```
+./ main --b file1
+```
+
+#### To calculate bit informational entropy of a multiple files
+```
+./ main -b file1 file2 ...
