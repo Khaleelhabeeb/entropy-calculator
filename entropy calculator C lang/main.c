@@ -98,8 +98,10 @@ void calculate_entropy(const char *filename, int bit_level) {
             }
         }
 
-        printf("--- File: %s ---\n", filename);
+        printf("\n--- File: %s ---\n", filename);
+        printf("---------------------------------------\n");
         printf("Bit-level informational entropy: %.6f bits\n", bitEntropy);
+        printf("---------------------------------------\n");
     } else {
         double entropy = 0.0;
         for (int i = 0; i < 256; i++) {
@@ -112,12 +114,14 @@ void calculate_entropy(const char *filename, int bit_level) {
         double entropyPerByte = entropy / 8;
         double entropyOfFile = entropy * totalBits / 8;
 
-        printf("--- File: %s ---\n", filename);
-        printf("Entropy per byte: %.6f bits or %.6f bytes\n", entropy, entropyPerByte);
-        printf("Entropy of file: %.6f bits or %.6f bytes\n", entropyOfFile, entropyOfFile / 8);
-        printf("Size of file: %llu bytes\n", totalBits / 8);
-        printf("Delta: %.6f bytes compressible theoretically\n", totalBits / 8 - entropyOfFile / 8);
-        printf("Best Theoretical Coding ratio: %.6f\n", 8 / entropy);
+        printf("\n--- File: %s ---\n", filename);
+        printf("---------------------------------------\n");
+        printf("Entropy per byte              : %.6f bits (%.6f bytes)\n", entropy, entropyPerByte);
+        printf("Entropy of file               : %.6f bits (%.6f bytes)\n", entropyOfFile, entropyOfFile / 8);
+        printf("Size of file                  : %llu bytes\n", totalBits / 8);
+        printf("Delta                         : %.6f bytes (compressible theoretically)\n", totalBits / 8 - entropyOfFile / 8);
+        printf("Best Theoretical Coding ratio : %.6f\n", 8 / entropy);
+        printf("---------------------------------------\n");
     }
     printf("\n");
 }
