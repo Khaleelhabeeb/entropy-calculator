@@ -1,129 +1,216 @@
 use clap::Parser;
-use std::fs::File;
-use std::io::{BufReader, Read};
-use std::path::Path;
-
-const BUFFER_SIZE: usize = 256;
+use entropy_calculator::{analyze_file, analyze_file_sliding_window, format_results, OutputFormat};
+use indicatif::{ProgressBar, ProgressStyle};
+use rayon::prelude::*;
+use std::io;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
 #[command(name = "entropy_calculator")]
 #[command(version = "0.1.0")]
-#[command(about = "Entropy calculator for files, calculates either byte-level or bit-level entropy based on a command-line argument.")]
+#[command(about = "Advanced entropy calculator for files with multiple output formats, recursive directory analysis, and parallel processing.")]
 struct Args {
     /// Calculate bit-level informational entropy
     #[arg(short = 'b', long = "bit")]
     bit_level: bool,
 
-    /// Files to analyze
+    /// Output format
+    #[arg(short = 'f', long = "format", default_value = "text", value_enum)]
+    format: OutputFormat,
+
+    /// Analyze directories recursively
+    #[arg(short = 'r', long = "recursive")]
+    recursive: bool,
+
+    /// Sliding window analysis (entropy per chunk)
+    #[arg(short = 'w', long = "window", value_name = "SIZE")]
+    window_size: Option<u64>,
+
+    /// Filter files by extension (e.g., ".txt", ".bin")
+    #[arg(short = 'e', long = "extension")]
+    extension: Option<String>,
+
+    /// Hide progress bars (by default progress bars are shown for multiple files)
+    #[arg(long = "no-progress", action = clap::ArgAction::SetTrue)]
+    no_progress: bool,
+
+    /// Parallel processing (number of threads, 0 = auto)
+    #[arg(long = "threads", default_value = "0")]
+    threads: usize,
+
+    /// Files or directories to analyze
     files: Vec<String>,
 }
 
-fn count_bits_set(byte: u8) -> u8 {
-    byte.count_ones() as u8
-}
+fn collect_files(paths: &[String], recursive: bool, extension: Option<&str>) -> Vec<PathBuf> {
+    let mut files = Vec::new();
 
-fn calculate_byte_level_entropy(counts: &[u32; 256], total_bytes: u64) -> f64 {
-    let mut entropy = 0.0;
-    for &count in counts.iter() {
-        if count > 0 {
-            let prob = count as f64 / total_bytes as f64;
-            entropy -= prob * prob.log2();
-        }
-    }
-    entropy
-}
-
-fn calculate_bit_level_entropy(counts: &[u32; 256], total_bytes: u64) -> f64 {
-    let mut bit_counts = [0u32; 9]; // 0 to 8 bits set
-    
-    for (byte_value, &count) in counts.iter().enumerate() {
-        if count > 0 {
-            let bits_set = count_bits_set(byte_value as u8);
-            bit_counts[bits_set as usize] += count;
-        }
-    }
-
-    let mut bit_entropy = 0.0;
-    for &bit_count in bit_counts.iter() {
-        if bit_count > 0 {
-            let prob = bit_count as f64 / total_bytes as f64;
-            bit_entropy -= prob * prob.log2();
-        }
-    }
-    bit_entropy
-}
-
-fn calculate_entropy(filename: &str, bit_level: bool) {
-    let path = Path::new(filename);
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("Error opening file {}: {}", filename, e);
-            return;
-        }
-    };
-
-    let mut reader = BufReader::new(file);
-    let mut buffer = [0u8; BUFFER_SIZE];
-    let mut counts = [0u32; 256];
-    let mut total_bytes: u64 = 0;
-
-    loop {
-        match reader.read(&mut buffer) {
-            Ok(0) => break, // EOF
-            Ok(bytes_read) => {
-                for i in 0..bytes_read {
-                    counts[buffer[i] as usize] += 1;
-                }
-                total_bytes += bytes_read as u64;
-            }
-            Err(e) => {
-                eprintln!("Error reading file {}: {}", filename, e);
-                return;
-            }
-        }
-    }
-
-    if total_bytes == 0 {
-        println!("File {} is empty", filename);
-        return;
-    }
-
-    if bit_level {
-        let bit_entropy = calculate_bit_level_entropy(&counts, total_bytes);
+    for path_str in paths {
+        let path = Path::new(path_str);
         
-        println!("\n--- File: {} ---", filename);
-        println!("---------------------------------------");
-        println!("Bit-level informational entropy: {:.6} bits", bit_entropy);
-        println!("---------------------------------------");
-    } else {
-        let entropy = calculate_byte_level_entropy(&counts, total_bytes);
-        let entropy_per_byte = entropy / 8.0;
-        let entropy_of_file = entropy * total_bytes as f64;
+        if path.is_file() {
+            if let Some(ext) = extension {
+                let ext_clean = ext.trim_start_matches('.');
+                if path.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e == ext_clean)
+                    .unwrap_or(false)
+                {
+                    files.push(path.to_path_buf());
+                }
+            } else {
+                files.push(path.to_path_buf());
+            }
+        } else if path.is_dir() {
+            if recursive {
+                let walker = WalkDir::new(path)
+                    .follow_links(false)
+                    .into_iter()
+                    .filter_map(|e| e.ok());
 
-        println!("\n--- File: {} ---", filename);
-        println!("---------------------------------------");
-        println!("Entropy per byte              : {:.6} bits ({:.6} bytes)", entropy, entropy_per_byte);
-        println!("Entropy of file               : {:.6} bits ({:.6} bytes)", entropy_of_file, entropy_of_file / 8.0);
-        println!("Size of file                  : {} bytes", total_bytes);
-        println!("Delta                         : {:.6} bytes (compressible theoretically)", total_bytes as f64 - entropy_of_file / 8.0);
-        println!("Best Theoretical Coding ratio : {:.6}", 8.0 / entropy);
-        println!("---------------------------------------");
+                for entry in walker {
+                    let entry_path = entry.path();
+                    if entry_path.is_file() {
+                        if let Some(ext) = extension {
+                            if entry_path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .map(|e| e == ext.trim_start_matches('.'))
+                                .unwrap_or(false)
+                            {
+                                files.push(entry_path.to_path_buf());
+                            }
+                        } else {
+                            files.push(entry_path.to_path_buf());
+                        }
+                    }
+                }
+            } else {
+                eprintln!("Warning: {} is a directory. Use -r/--recursive to analyze directories.", path_str);
+            }
+        } else {
+            eprintln!("Warning: {} does not exist or is not a file/directory", path_str);
+        }
     }
-    println!();
+
+    files
 }
 
 fn main() {
     let args = Args::parse();
 
     if args.files.is_empty() {
-        eprintln!("Error: Please provide one or more files to analyze");
-        eprintln!("Usage: entropy_calculator [OPTIONS] <FILE>...");
+        eprintln!("Error: Please provide one or more files or directories to analyze");
+        eprintln!("Usage: entropy_calculator [OPTIONS] <FILE|DIR>...");
+        eprintln!("\nExamples:");
+        eprintln!("  entropy_calculator file.txt");
+        eprintln!("  entropy_calculator -r --extension .txt /path/to/dir");
+        eprintln!("  entropy_calculator --format json -r .");
+        eprintln!("  entropy_calculator --window 1024 large_file.bin");
         std::process::exit(1);
     }
 
-    for file in &args.files {
-        calculate_entropy(file, args.bit_level);
+    // Set up parallel processing
+    if args.threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(args.threads)
+            .build_global()
+            .expect("Failed to initialize thread pool");
+    }
+
+    // Collect all files to analyze
+    let files = collect_files(&args.files, args.recursive, args.extension.as_deref());
+
+    if files.is_empty() {
+        eprintln!("Error: No files found to analyze");
+        std::process::exit(1);
+    }
+
+    // Handle sliding window analysis
+    if let Some(window_size) = args.window_size {
+        if files.len() > 1 {
+            eprintln!("Warning: Sliding window analysis works on a single file. Analyzing first file only.");
+        }
+
+        if let Some(file) = files.first() {
+            match analyze_file_sliding_window(file, window_size) {
+                Ok(results) => {
+                    println!("\n--- Sliding Window Entropy Analysis: {} ---", file.display());
+                    println!("Window size: {} bytes", window_size);
+                    println!("Number of windows: {}", results.len());
+                    println!("\nPosition (bytes)\tWindow Size\tEntropy (bits)");
+                    println!("{}", "-".repeat(60));
+                    
+                    for result in &results {
+                        println!(
+                            "{}\t\t{}\t\t{:.6}",
+                            result.position, result.chunk_size, result.entropy
+                        );
+                    }
+
+                    // Calculate statistics
+                    if !results.is_empty() {
+                        let min_entropy = results.iter().map(|r| r.entropy).fold(f64::INFINITY, f64::min);
+                        let max_entropy = results.iter().map(|r| r.entropy).fold(0.0, f64::max);
+                        let avg_entropy = results.iter().map(|r| r.entropy).sum::<f64>() / results.len() as f64;
+                        
+                        println!("\nStatistics:");
+                        println!("  Minimum entropy: {:.6} bits", min_entropy);
+                        println!("  Maximum entropy: {:.6} bits", max_entropy);
+                        println!("  Average entropy: {:.6} bits", avg_entropy);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error performing sliding window analysis: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        return;
+    }
+
+    // Regular entropy analysis
+    let pb = if !args.no_progress && files.len() > 1 && args.window_size.is_none() {
+        Some(
+            ProgressBar::new(files.len() as u64).with_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} files ({msg})")
+                    .unwrap()
+                    .progress_chars("#>-"),
+            ),
+        )
+    } else {
+        None
+    };
+
+    let results: Vec<_> = files
+        .par_iter()
+        .map(|file| {
+            if let Some(ref bar) = pb {
+                bar.set_message(file.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string());
+            }
+            
+            let result = analyze_file(file, args.bit_level);
+            
+            if let Some(ref bar) = pb {
+                bar.inc(1);
+            }
+            
+            result
+        })
+        .collect();
+
+    if let Some(bar) = pb {
+        bar.finish_with_message("Complete");
+    }
+
+    // Output results
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    
+    if let Err(e) = format_results(args.format, &results, &mut handle) {
+        eprintln!("Error writing output: {}", e);
+        std::process::exit(1);
     }
 }
-
