@@ -19,3 +19,21 @@
 
 # Go workspace file
 go.work
+
+# Rust build artifacts
+entropy_calculator_rust/target/
+
+# Cargo lock file (optional - for binaries it's fine to include)
+entropy_calculator_rust/Cargo.lock
+
+# Test files (optional - uncomment if you don't want to commit test data files)
+# entropy_calculator_rust/test*.txt
+# entropy_calculator_rust/test*.bin
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
