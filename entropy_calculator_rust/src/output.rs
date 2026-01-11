@@ -2,7 +2,7 @@ use crate::analysis::FileAnalysis;
 use serde::Serialize;
 use std::io::Write;
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
     Text,
     Json,

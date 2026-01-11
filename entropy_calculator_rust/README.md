@@ -12,6 +12,13 @@ An advanced entropy calculator for files with multiple output formats, recursive
 - **Parallel Processing**: Multi-threaded analysis for faster processing
 - **Sliding Window Entropy**: Analyze entropy changes across file position
 
+### Tier 2 Features 🎨
+
+- **Visualization**: ASCII histograms, frequency charts, and line graphs
+- **Statistical Summaries**: Aggregate statistics (min/max/avg, percentiles, std dev)
+- **Comparative Analysis**: Compare files side-by-side or against a baseline
+- **Configuration Files**: TOML-based configuration for default settings
+
 ### Core Features
 
 - Byte-level entropy calculation (Shannon entropy)
@@ -177,6 +184,151 @@ Progress bars are automatically shown when analyzing multiple files. To disable:
 ./target/release/entropy_calculator --no-progress file1.txt file2.txt
 ```
 
+## Visualization Features
+
+### Byte Distribution Histogram
+
+Display an ASCII histogram showing byte distribution across 16 bins:
+
+```bash
+./target/release/entropy_calculator --histogram file1.txt
+```
+
+Example output:
+```
+Byte Distribution Histogram: file1.txt
+======================================================================
+00-0F │█│ 1
+10-1F ││ 0
+20-2F │████████████████████████│ 15
+...
+======================================================================
+```
+
+### Frequency Chart
+
+Show the top N most frequent bytes in a file:
+
+```bash
+./target/release/entropy_calculator --frequency --frequency-top 10 file1.txt
+```
+
+Controls the number of top bytes displayed (default: 10).
+
+### Sliding Window Graph
+
+Visualize entropy changes across file position with an ASCII line graph:
+
+```bash
+./target/release/entropy_calculator --window 1024 --graph large_file.bin
+```
+
+Shows entropy as a function of file position, useful for detecting patterns and anomalies.
+
+## Statistical Summaries
+
+Generate aggregate statistics across multiple files:
+
+```bash
+./target/release/entropy_calculator --stats -r --extension .bin /path/to/directory
+```
+
+Output includes:
+- Minimum, maximum, average entropy
+- Standard deviation
+- Median
+- Percentiles (25th, 75th, 90th, 95th, 99th)
+- Total files and bytes analyzed
+
+Example output:
+```
+======================================================================
+Aggregate Statistics
+======================================================================
+Total files analyzed: 10
+Total bytes: 1048576
+
+Entropy Statistics:
+  Minimum:     3.234567 bits
+  Maximum:     7.891234 bits
+  Average:     5.123456 bits
+  Std Dev:     1.234567 bits
+  Median:      5.000000 bits
+
+Percentiles:
+  25th (Q1):   4.500000 bits
+  75th (Q3):   5.800000 bits
+  90th:        6.500000 bits
+  95th:        7.000000 bits
+  99th:        7.500000 bits
+======================================================================
+```
+
+## Comparative Analysis
+
+### Compare Two Files
+
+Compare entropy and size between two files:
+
+```bash
+./target/release/entropy_calculator --compare file2.txt file1.txt
+```
+
+Shows:
+- Entropy comparison (absolute and percentage difference)
+- Size comparison (absolute and percentage difference)
+
+### Baseline Comparison
+
+Compare all files against the first file (baseline):
+
+```bash
+./target/release/entropy_calculator --baseline baseline.txt file1.txt file2.txt file3.txt
+```
+
+Useful for batch comparison to identify files with similar or different entropy patterns.
+
+## Configuration Files
+
+### Generate Configuration Template
+
+Create a configuration template:
+
+```bash
+./target/release/entropy_calculator --gen-config config.toml
+```
+
+This creates a TOML file with default settings that can be customized.
+
+### Configuration File Format
+
+Example `config.toml`:
+
+```toml
+[output]
+format = "text"
+show_progress = true
+threads = 0
+
+[analysis]
+bit_level = false
+recursive = false
+extension = ".txt"  # Optional
+
+[visualization]
+show_histogram = true
+show_frequency_chart = true
+frequency_top_n = 10
+```
+
+### Using Configuration Files
+
+```bash
+./target/release/entropy_calculator -c config.toml file1.txt
+```
+
+Configuration settings can be overridden by command-line arguments. CLI arguments always take precedence.
+
 ## Complete Examples
 
 ### Example 1: Analyze all text files in a directory (JSON output)
@@ -185,22 +337,37 @@ Progress bars are automatically shown when analyzing multiple files. To disable:
 ./target/release/entropy_calculator -r --extension txt --format json /path/to/directory > results.json
 ```
 
-### Example 2: Sliding window analysis with bit-level entropy
+### Example 2: Sliding window analysis with graph visualization
 
 ```bash
-./target/release/entropy_calculator --bit --window 512 encrypted_file.bin
+./target/release/entropy_calculator --window 512 --graph large_file.bin
 ```
 
-### Example 3: Batch analysis with CSV export
+### Example 3: Batch analysis with CSV export and statistics
 
 ```bash
-./target/release/entropy_calculator --format csv -r --extension bin /data/binary_files > entropy_report.csv
+./target/release/entropy_calculator --format csv --stats -r --extension bin /data/binary_files > entropy_report.csv
 ```
 
-### Example 4: Compare entropy across multiple files
+### Example 4: Full analysis with all visualizations
 
 ```bash
-./target/release/entropy_calculator --format csv file1.bin file2.bin file3.bin | sort -t, -k3 -nr
+./target/release/entropy_calculator --histogram --frequency --frequency-top 15 file1.txt
+```
+
+### Example 5: Compare files and generate statistics
+
+```bash
+./target/release/entropy_calculator --compare file2.bin file1.bin
+./target/release/entropy_calculator --stats file1.bin file2.bin file3.bin
+```
+
+### Example 6: Using configuration file
+
+```bash
+./target/release/entropy_calculator --gen-config myconfig.toml
+# Edit myconfig.toml as needed
+./target/release/entropy_calculator -c myconfig.toml -r /path/to/directory
 ```
 
 ## Test Files
@@ -229,6 +396,15 @@ Options:
   -e, --extension <EXTENSION>  Filter files by extension (e.g., ".txt", ".bin")
       --no-progress            Hide progress bars (by default progress bars are shown)
       --threads <THREADS>      Parallel processing (number of threads, 0 = auto) [default: 0]
+      --histogram              Show byte distribution histogram (text format only)
+      --frequency              Show frequency chart (top N bytes)
+      --frequency-top <N>      Number of top bytes in frequency chart [default: 10]
+      --graph                  Show sliding window graph (requires --window)
+      --stats                  Show aggregate statistics (multiple files)
+      --compare <FILE2>        Compare two files (requires exactly one file argument)
+      --baseline               Compare all files against first file (baseline mode)
+  -c, --config <PATH>          Configuration file path
+      --gen-config <PATH>      Generate a sample configuration file
   -h, --help                   Print help
   -V, --version                Print version
 ```
@@ -295,7 +471,11 @@ src/
 ├── lib.rs           # Library interface
 ├── entropy.rs       # Entropy calculation functions
 ├── analysis.rs      # File analysis logic
-└── output.rs        # Output formatting (text, JSON, CSV)
+├── output.rs        # Output formatting (text, JSON, CSV)
+├── visualization.rs # Visualization features (histograms, graphs, charts)
+├── statistics.rs    # Statistical summaries and aggregate statistics
+├── comparison.rs    # File comparison and baseline analysis
+└── config.rs        # Configuration file support (TOML)
 ```
 
 ## License
